@@ -146,10 +146,12 @@
     const app = initializeApp(firebaseConfig);
     const storage = getStorage(app);
 
-    // Récupère l'identifiant du mariage et les noms depuis le lien (ex: upload.html?id=dupont-martin&names=Julie%20%26%20Marc)
+    // Récupère l'identifiant du mariage, les noms et la date limite depuis le lien
+    // (ex: upload.html?id=dupont-martin&names=Julie%20%26%20Marc&deadline=2026-09-14T23:59:00)
     const params = new URLSearchParams(window.location.search);
     const weddingId = params.get("id");
     const names = params.get("names");
+    const deadline = params.get("deadline");
 
     if (names) document.getElementById("namesDisplay").textContent = names;
 
@@ -167,6 +169,9 @@
       errorText.textContent = "Lien invalide : identifiant du mariage manquant.";
       sendBtn.disabled = true;
       fileInput.disabled = true;
+    } else if (deadline && new Date() > new Date(deadline)) {
+      document.querySelector(".card").innerHTML =
+        '<p>Cet album ne reçoit plus de nouvelles photos, la période d\'envoi est terminée. Merci à tous ceux qui ont partagé leurs souvenirs !</p>';
     }
 
     fileInput.addEventListener("change", () => {
