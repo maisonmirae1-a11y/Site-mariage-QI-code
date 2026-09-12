@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Album privé</title>
+<style>
+  :root { --accent: #b08968; --bg: #faf6f1; --text: #3a2e2a; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Georgia', serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  h1 { text-align: center; font-size: 1.4rem; }
+  #loginBox {
+    max-width: 360px;
+    margin: 40px auto;
+    background: white;
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  }
+  #loginBox input {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+  }
+  #loginBox button, #logoutBtn {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  #logoutBtn { width: auto; padding: 8px 16px; background: var(--text); float: right; }
+  .error { color: #b03a2e; text-align: center; margin-top: 8px; font-size: 0.9rem; }
+  #gallery {
+    display: none;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .grid img {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .empty { text-align: center; color: #999; margin-top: 40px; }
+  a.download-all { display:block; text-align:center; margin-top: 16px; color: var(--accent); }
+</style>
+</head>
+<body>
+
+  <div id="loginBox">
+    <h1>Album privé</h1>
+    <input type="email" id="email" placeholder="Adresse email">
+    <input type="password" id="password" placeholder="Mot de passe">
+    <button id="loginBtn">Se connecter</button>
+    <div class="error" id="loginError"></div>
+  </div>
+
+  <div id="gallery">
+    <button id="logoutBtn">Se déconnecter</button>
+    <h1 id="galleryTitle">Album</h1>
+    <div class="empty" id="emptyMsg" style="display:none;">Aucune photo pour l'instant.</div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+    import { getStorage, ref, listAll, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+
+    // ⚠️ Remplace par la config de TON projet Firebase (identique à upload.html)
+    const firebaseConfig = {
+      apiKey: "AIzaSyChe0fQwj8G_FLissRzoxu7NdJJsq_C9d4",
+      authDomain: "qr-code-mariage.firebaseapp.com",
+      projectId: "qr-code-mariage",
+      storageBucket: "qr-code-mariage.firebasestorage.app",
+      messagingSenderId: "811526969611",
+      appId: "1:811526969611:web:c86102da53b5576aa66a0e"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
+
+    const params = new URLSearchParams(window.location.search);
+    const weddingId = params.get("id");
+    const names = params.get("names");
+
+    const loginBox = document.getElementById("loginBox");
+    const gallery = document.getElementById("gallery");
+    const loginError = document.getElementById("loginError");
+
+    document.getElementById("loginBtn").addEventListener("click", async () => {
+      loginError.textContent = "";
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (e) {
+        loginError.textContent = "Email ou mot de passe incorrect.";
+      }
+    });
+
+    document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        loginBox.style.display = "none";
+        gallery.style.display = "block";
+        if (!weddingId) {
+          document.getElementById("galleryTitle").textContent = "Lien invalide";
+          return;
+        }
+        document.getElementById("galleryTitle").textContent = names || "Album du mariage";
+        await loadPhotos();
+      } else {
+        loginBox.style.display = "block";
+        gallery.style.display = "none";
+      }
+    });
+
+    async function loadPhotos() {
+      const grid = document.getElementById("grid");
+      const emptyMsg = document.getElementById("emptyMsg");
+      grid.innerHTML = "";
+      const folderRef = ref(storage, `albums/${weddingId}`);
+      try {
+        const res = await listAll(folderRef);
+        if (res.items.length === 0) {
+          emptyMsg.style.display = "block";
+          return;
+        }
+        emptyMsg.style.display = "none";
+        for (const itemRef of res.items) {
+          const url = await getDownloadURL(itemRef);
+          const img = document.createElement("img");
+          img.src = url;
+          img.addEventListener("click", () => window.open(url, "_blank"));
+          grid.appendChild(img);
+        }
+      } catch (e) {
+        emptyMsg.style.display = "block";
+        emptyMsg.textContent = "Impossible de charger l'album (vérifiez vos droits d'accès).";
+      }
+    }
+  </script>
+</body>
+</html>

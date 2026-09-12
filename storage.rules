@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /albums/{weddingId}/{fileName} {
+      // Lecture : uniquement pour les personnes connectées (toi + les mariés)
+      allow read: if request.auth != null;
+
+      // Écriture : ouverte aux invités (pas de compte requis),
+      // mais limitée aux images de moins de 15 Mo pour éviter les abus
+      allow write: if request.resource.size < 15 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
