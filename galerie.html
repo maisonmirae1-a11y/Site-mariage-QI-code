@@ -70,7 +70,72 @@
   }
   .empty { text-align: center; color: #999; margin-top: 40px; }
   a.download-all { display:block; text-align:center; margin-top: 16px; color: var(--accent); }
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    align-items: center;
+  }
+  .toolbar button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    background: var(--accent);
+    color: white;
+  }
+  .toolbar button.secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid #ccc;
+  }
+  .toolbar button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  #selectionCount {
+    font-size: 0.9rem;
+    color: #777;
+  }
+  .photo-item {
+    position: relative;
+  }
+  .photo-item .checkbox {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.85);
+    border: 2px solid var(--accent);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    color: var(--accent);
+    font-weight: bold;
+  }
+  .grid.selecting .photo-item .checkbox {
+    display: flex;
+  }
+  .photo-item.selected .checkbox {
+    background: var(--accent);
+    color: white;
+  }
+  .photo-item.selected img {
+    outline: 3px solid var(--accent);
+  }
+  #downloadStatus {
+    text-align: center;
+    margin-top: 12px;
+    color: var(--accent);
+    font-size: 0.9rem;
+  }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
@@ -86,6 +151,14 @@
   <div id="gallery">
     <button id="logoutBtn">Se déconnecter</button>
     <h1 id="galleryTitle">Album</h1>
+    <div class="toolbar">
+      <button id="selectBtn" class="secondary">Sélectionner</button>
+      <button id="selectAllBtn" class="secondary" style="display:none;">Tout sélectionner</button>
+      <button id="downloadSelectedBtn" style="display:none;" disabled>Télécharger la sélection</button>
+      <button id="downloadAllBtn" class="secondary">Tout télécharger</button>
+      <span id="selectionCount" style="display:none;"></span>
+    </div>
+    <div id="downloadStatus"></div>
     <div class="empty" id="emptyMsg" style="display:none;">Aucune photo pour l'instant.</div>
     <div class="grid" id="grid"></div>
   </div>
@@ -93,7 +166,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-    import { getStorage, ref, listAll, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+    import { getStorage, ref, listAll, getDownloadURL, getBlob } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
     // ⚠️ Remplace par la config de TON projet Firebase (identique à upload.html)
     const firebaseConfig = {
@@ -146,10 +219,96 @@
       }
     });
 
+    let allItemRefs = [];
+    let selectionMode = false;
+    let selectedRefs = new Set();
+
+    const grid = document.getElementById("grid");
+    const selectBtn = document.getElementById("selectBtn");
+    const selectAllBtn = document.getElementById("selectAllBtn");
+    const downloadSelectedBtn = document.getElementById("downloadSelectedBtn");
+    const downloadAllBtn = document.getElementById("downloadAllBtn");
+    const selectionCount = document.getElementById("selectionCount");
+    const downloadStatus = document.getElementById("downloadStatus");
+
+    selectBtn.addEventListener("click", () => {
+      selectionMode = !selectionMode;
+      grid.classList.toggle("selecting", selectionMode);
+      selectBtn.textContent = selectionMode ? "Annuler" : "Sélectionner";
+      selectAllBtn.style.display = selectionMode ? "inline-block" : "none";
+      downloadSelectedBtn.style.display = selectionMode ? "inline-block" : "none";
+      selectionCount.style.display = selectionMode ? "inline" : "none";
+      downloadAllBtn.style.display = selectionMode ? "none" : "inline-block";
+      if (!selectionMode) {
+        selectedRefs.clear();
+        document.querySelectorAll(".photo-item.selected").forEach(el => el.classList.remove("selected"));
+        updateSelectionCount();
+      }
+    });
+
+    selectAllBtn.addEventListener("click", () => {
+      const items = document.querySelectorAll(".photo-item");
+      const allSelected = selectedRefs.size === allItemRefs.length;
+      items.forEach((el, i) => {
+        if (allSelected) {
+          el.classList.remove("selected");
+        } else {
+          el.classList.add("selected");
+          selectedRefs.add(allItemRefs[i]);
+        }
+      });
+      if (allSelected) selectedRefs.clear();
+      selectAllBtn.textContent = allSelected ? "Tout sélectionner" : "Tout désélectionner";
+      updateSelectionCount();
+    });
+
+    function updateSelectionCount() {
+      selectionCount.textContent = selectedRefs.size + " photo(s) sélectionnée(s)";
+      downloadSelectedBtn.disabled = selectedRefs.size === 0;
+    }
+
+    async function downloadAsZip(itemRefs, zipName) {
+      if (itemRefs.length === 0) return;
+      downloadStatus.textContent = "Préparation du téléchargement : 0 / " + itemRefs.length + "...";
+      const zip = new JSZip();
+      let done = 0;
+      for (const itemRef of itemRefs) {
+        try {
+          const blob = await getBlob(itemRef);
+          zip.file(itemRef.name, blob);
+        } catch (e) {
+          console.error("Erreur sur", itemRef.name, e);
+        }
+        done++;
+        downloadStatus.textContent = "Préparation du téléchargement : " + done + " / " + itemRefs.length + "...";
+      }
+      downloadStatus.textContent = "Compression en cours...";
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = zipName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      downloadStatus.textContent = "Téléchargement terminé !";
+      setTimeout(() => { downloadStatus.textContent = ""; }, 4000);
+    }
+
+    downloadAllBtn.addEventListener("click", () => {
+      downloadAsZip(allItemRefs, "album-" + (weddingId || "photos") + ".zip");
+    });
+
+    downloadSelectedBtn.addEventListener("click", () => {
+      downloadAsZip(Array.from(selectedRefs), "selection-" + (weddingId || "photos") + ".zip");
+    });
+
     async function loadPhotos() {
-      const grid = document.getElementById("grid");
       const emptyMsg = document.getElementById("emptyMsg");
       grid.innerHTML = "";
+      allItemRefs = [];
+      selectedRefs.clear();
       const folderRef = ref(storage, `albums/${weddingId}`);
       try {
         const res = await listAll(folderRef);
@@ -158,12 +317,33 @@
           return;
         }
         emptyMsg.style.display = "none";
+        allItemRefs = res.items;
         for (const itemRef of res.items) {
           const url = await getDownloadURL(itemRef);
+          const wrap = document.createElement("div");
+          wrap.className = "photo-item";
+          const checkbox = document.createElement("div");
+          checkbox.className = "checkbox";
+          checkbox.textContent = "\u2713";
           const img = document.createElement("img");
           img.src = url;
-          img.addEventListener("click", () => window.open(url, "_blank"));
-          grid.appendChild(img);
+          img.addEventListener("click", () => {
+            if (selectionMode) {
+              if (wrap.classList.contains("selected")) {
+                wrap.classList.remove("selected");
+                selectedRefs.delete(itemRef);
+              } else {
+                wrap.classList.add("selected");
+                selectedRefs.add(itemRef);
+              }
+              updateSelectionCount();
+            } else {
+              window.open(url, "_blank");
+            }
+          });
+          wrap.appendChild(img);
+          wrap.appendChild(checkbox);
+          grid.appendChild(wrap);
         }
       } catch (e) {
         emptyMsg.style.display = "block";
